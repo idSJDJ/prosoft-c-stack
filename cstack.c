@@ -1,24 +1,37 @@
 /* Type your code here, or load an example. */
-#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "cstack.h"
 
-//эти вещи можно скрыть через файл, где они будут объявлены как "extern", но я думаю это излишне
-struct _g_table * g_table;
+#define STACK_HANLDER_MAX 		10 			//максимальное количество хэндлеров
+#define STACK_NODE_MAX_SIZE 	1073741824 	//не дадим записать за раз больше гигабайта
+#define STACK_NODE_MAX_COUNT 	800 		//максимальное число узлов у стека
+
+struct node
+{
+    struct node * prev;
+    char * data;
+    unsigned int size;
+};
+
+struct _g_table
+{
+	struct node * point;
+    unsigned int size;
+};
+
+
+static struct _g_table * g_table;
 const unsigned int size_g_t = sizeof(struct _g_table);
 int stack_first_start = 0;
-int stack_handler_count[STACK_HANLDER_MAX];//количество хэндлеров
+int stack_handler_count[STACK_HANLDER_MAX] = {0};//количество хэндлеров
 //
 
 hstack_t stack_new(void)
 {
     if (stack_first_start == 0)
     {//обязываем пользователя создать стек
-        stack_first_start++;
-        for (int i0=0;i0 < STACK_HANLDER_MAX; i0++)
-        {//освобождаем все хендлеры при первом пуске
-            stack_handler_count[i0] = 0;
-        }
+        stack_first_start = 1;
     }
 
     //ищем первый попавшийся свободный хэндлер
@@ -42,8 +55,14 @@ hstack_t stack_new(void)
     new->prev = NULL;
     new->size = 0;
 
-    //сдвигаем адрес указателя под новую "ищейку"
-    g_table+= i1 * size_g_t;
+    if (stack_first_start == 2)
+    {//сдвигаем адрес указателя под новую "ищейку"
+    	g_table+= i1 * size_g_t;
+    } else { //если зашли в функцию впервые, то не трогаем g_table
+    	stack_first_start = 2;
+    }
+
+
 
     //выделяем память под "ищейку" для нового стека
     g_table = (struct _g_table *) malloc ( size_g_t );
@@ -57,8 +76,10 @@ hstack_t stack_new(void)
     g_table->point = new;
     g_table->size = 0;
 
-    //возвращаем указатель на место, ведь он глобальный
-    g_table-= i1 * size_g_t;
+    if (stack_first_start == 2)
+    {//возвращаем указатель на место, ведь он глобальный
+        g_table-= i1 * size_g_t;
+    }
 
     //забиваем место за хэндлером
     stack_handler_count[i1] = 1;
@@ -71,7 +92,7 @@ void stack_free(const hstack_t stack)
     {//не даём проникнуть в функции без создания хотя бы одного стека
         return;
     }
-    if ((stack >= STACK_HANLDER_MAX) && (stack < 0))
+    if ((stack >= STACK_HANLDER_MAX) || (stack < 0))
     {//хэндлер стека вне диапазона допустимых хэндлеров
         return;
     }
@@ -104,7 +125,7 @@ int stack_valid_handler(const hstack_t stack)
     {//не даём проникнуть в функции без создания хотя бы одного стека
         return 1;
     }
-    if ((stack >= STACK_HANLDER_MAX) && (stack < 0))
+    if ((stack >= STACK_HANLDER_MAX) || (stack < 0))
     {//хэндлер стека вне диапазона допустимых хэндлеров
         return 1;
     }
@@ -125,7 +146,7 @@ unsigned int stack_size(const hstack_t stack)
     {//не даём проникнуть в функции без создания хотя бы одного стека
         return 0;
     }
-    if ((stack >= STACK_HANLDER_MAX) && (stack < 0))
+    if ((stack >= STACK_HANLDER_MAX) || (stack < 0))
     {//хэндлер стека вне диапазона допустимых хэндлеров
         return 0;
     }
@@ -156,7 +177,7 @@ void stack_push(const hstack_t stack, const void* data_in, const unsigned int si
     {//не даём проникнуть в функции без создания хотя бы одного стека
         return;
     }
-    if ((stack >= STACK_HANLDER_MAX) && (stack < 0))
+    if ((stack >= STACK_HANLDER_MAX) || (stack < 0))
     {//хэндлер стека вне диапазона допустимых хэндлеров
         return;
     }
@@ -224,21 +245,10 @@ void stack_push(const hstack_t stack, const void* data_in, const unsigned int si
     temp->prev = last;//теперь это предпоследний
     last->prev = NULL;//а это новый конец
     last->size = 0;
-    g_table->size +=1;
+    g_table->size +=1;//увеличиваем размер стека на 1
 
+    memcpy(temp->data , data_in , size);
 
-    for (int i = 0; i < size; i++)
-    {
-        //записываем побайтно, независимо что пришло
-        //я бы написал uint8_t вместо char везде, но чтобы не было проблем...
-        //и ещё личное замечание - указатель "нулевой элемент" - мне недоступен,
-        //считаю, что это равносильно указателю с адресом "0х0" - который условно я бракую,
-        // т.к. другого "нулевого указателя" у меня нет
-        //а также считаю, что доступ для ЧТЕНИЯ разрешён ко ВСЕМ ячейкам памяти
-        //в противном случае, на валидацию некорректно введённого адреса нужна
-        //довольно большая портянка с заранее известными ограничениями по памяти
-        *(temp->data+i) =*(char*)(data_in+i);
-    }
     temp->size = size;
 
     //возвращаем указатель на место, ведь он глобальный
@@ -255,7 +265,7 @@ unsigned int stack_pop(const hstack_t stack, void* data_out, const unsigned int 
     {//не даём проникнуть в функции без создания хотя бы одного стека
         return 0;
     }
-    if ((stack >= STACK_HANLDER_MAX) && (stack < 0))
+    if ((stack >= STACK_HANLDER_MAX) || (stack < 0))
     {//хэндлер стека вне диапазона допустимых хэндлеров
         return 0;
     }
@@ -297,16 +307,18 @@ unsigned int stack_pop(const hstack_t stack, void* data_out, const unsigned int 
         g_table-= stack * size_g_t;
         return 0;
     }
+    if (finder == NULL)
+    {//если возникла ошибка в логике
+    	g_table-= stack * size_g_t;
+    	return 0;
+    }
     if (size < finder->size)
     {//если размер буфера меньше размера данных в узле
         return 0;
     }
 
     //вытаскиваем данные в буфер
-    for (int i = 0; i < finder->size; i++)
-    {
-        *(char*)(data_out+i) = *(finder->data+i);
-    }
+    memcpy(data_out, temp->data , size);
 
     //зачищаем узел (теперь он последний)
     finder->prev = NULL;
